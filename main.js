@@ -1,4 +1,4 @@
-// main.js – Deno Deploy + Hono เวอร์ชันแทน server.js เดิม (JavaScript)
+// main.js – Deno Deploy + Hono
 
 import { Hono } from "jsr:@hono/hono";
 
@@ -15,23 +15,13 @@ const MAIL_FROM_NAME = Deno.env.get("MAIL_FROM_NAME") ?? "My-Web";
 
 const app = new Hono();
 
-/**
- * หน้าแรก -> ให้ไปที่ index.html ในโฟลเดอร์ public
- * (ใน Deno Deploy ไปตั้ง Static files = public)
- */
 app.get("/", (c) => c.redirect("/index.html"));
 
-/**
- * ถ้ามี path /public/... ก็ redirect ให้ไปไฟล์ตรง ๆ ใน static root
- * (กันกรณีใน HTML เรียก /public/xxx)
- */
 app.get("/public/*", (c) => {
   const url = new URL(c.req.url);
   const path = url.pathname.replace(/^\/public/, "");
   return c.redirect(path || "/index.html");
 });
-
-// -------------------- /api/upload (แทนของเดิมใน server.js) --------------------
 
 app.post("/api/upload", async (c) => {
   try {
@@ -43,12 +33,10 @@ app.post("/api/upload", async (c) => {
     }
 
     const fd = new FormData();
-    // pic.in.th รับฟิลด์ชื่อ source
     fd.append("source", file, file.name || "upload.bin");
     fd.append("format", "json");
 
     if (PIC_API_KEY) {
-      // แนบ key เป็นฟิลด์เหมือนของเดิม
       fd.append("key", PIC_API_KEY);
     }
 
@@ -78,8 +66,6 @@ app.post("/api/upload", async (c) => {
   }
 });
 
-// -------------------- /api/send-mail (Gmail SMTP – บน Deno ใช้ไม่ได้) --------------------
-
 app.post("/api/send-mail", () => {
   const html = `
     <h2>ไม่รองรับ Gmail SMTP บน Deno Deploy</h2>
@@ -92,8 +78,6 @@ app.post("/api/send-mail", () => {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 });
-
-// -------------------- /api/send-mail-maileroo (Maileroo API – ใช้งานจริง) --------------------
 
 app.post("/api/send-mail-maileroo", async (c) => {
   if (!MAILEROO_API_KEY) {
@@ -188,7 +172,8 @@ app.post("/api/send-mail-maileroo", async (c) => {
   }
 });
 
-// -------------------- START SERVER (Deno Deploy) --------------------
+// ❌ ห้าม Deno.serve(app.fetch) บน Deno Deploy
+// Deno.serve(app.fetch);
 
-Deno.serve(app.fetch);
+// แค่ export default app ก็พอ
 export default app;

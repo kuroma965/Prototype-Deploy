@@ -1,0 +1,202 @@
+/* global.css - shared across all pages (menu / maileroo / upload) */
+/* Updated: layout column + site-main + footer styles */
+
+:root {
+  --bg: #f5f5f5;
+  --card-bg: #fff;
+  --text-muted: #555;
+  --accent: #007bff;
+  --accent-600: #0062d6;
+  --radius: 12px;
+  --max-width: 420px;
+  --shadow: 0 6px 22px rgba(10,20,40,0.06);
+  --font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", Arial, sans-serif;
+  --input-border: #e6e9ef;
+  --danger: #e0463a;
+}
+
+/* ========== base ========== */
+* { box-sizing: border-box; }
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-family);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #071235;
+}
+
+/* Make body a column layout so footer can sit at the bottom */
+body {
+  display: flex;
+  flex-direction: column;    /* << important */
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* Main content area that grows to push footer down */
+.site-main {
+  flex: 1 1 auto;            /* allow grow/shrink, fills available height */
+  display: flex;
+  align-items: center;       /* center vertically */
+  justify-content: center;   /* center horizontally */
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Card (used by index, maileroo, upload) */
+.card {
+  background: var(--card-bg);
+  padding: 24px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-width: var(--max-width);
+  width: 100%;
+  text-align: center;
+}
+
+/* Optionally allow wider form card: add .form-card */
+.card.form-card { max-width: 720px; text-align: left; padding: 28px; }
+
+/* Logo */
+.logo { display:block; margin:0 auto 12px; width:84px; height:auto; object-fit:contain; }
+
+/* Headings & text */
+h1 { margin-top:0; margin-bottom:8px; font-size:1.5rem; }
+p { margin-top:0; margin-bottom:16px; color:var(--text-muted); }
+
+/* Buttons (link styled) */
+a.button {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:10px 14px; margin:8px 0; border-radius:8px; text-decoration:none;
+  font-weight:600; border:1px solid var(--accent); transition:transform .12s, box-shadow .12s;
+  background:#fff; color:var(--accent);
+}
+a.button.primary { background:linear-gradient(180deg,var(--accent),var(--accent-600)); color:#fff; border-color:transparent; }
+a.button.secondary { background:#fff; color:var(--accent); }
+
+/* hover */
+a.button:hover, a.button:focus { transform:translateY(-3px); box-shadow:0 10px 30px rgba(2,6,23,0.06); }
+a.button:focus { outline:3px solid rgba(0,123,255,0.12); outline-offset:2px; }
+
+/* Minimal form styling (applies inside .card) */
+.card form { margin-top: 6px; text-align: left; }
+.card label { display:block; margin:10px 0 6px; font-weight:600; color:#071235; }
+.card input[type="text"],
+.card input[type="email"],
+.card textarea,
+.card input[type="file"],
+.card select {
+  width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--input-border);
+  background:#fff; font-size:1rem; color:#071235; transition:box-shadow .12s, border-color .12s, transform .12s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.card textarea { min-height:120px; resize:vertical; line-height:1.4; }
+.card input:focus, .card textarea:focus, .card select:focus {
+  outline:none; border-color: rgba(0,123,255,0.9); box-shadow: 0 8px 20px rgba(11,120,255,0.08); transform:translateY(-1px);
+}
+
+/* form button */
+.card button, .card .btn {
+  margin-top:12px; padding:10px 14px; border-radius:8px; border:0; cursor:pointer; font-weight:700;
+  background: linear-gradient(180deg,var(--accent),var(--accent-600)); color:#fff;
+}
+.card a.back, .card .back { display:inline-block; margin-bottom:12px; text-decoration:none; color:var(--accent); font-weight:600; }
+
+/* small adjustments for upload preview */
+.wrap { max-width: 720px; width: 100%; margin: 0 auto; }
+.wrap img.preview { max-width: 300px; margin-top:12px; border-radius:6px; display:block; }
+
+/* ========== Footer styles (moved into global.css) ========== */
+.site-footer {
+  margin-top: 28px;
+  padding: 18px 16px;
+  background: transparent;
+  color: #263044;
+  font-family: inherit;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.site-footer .inner {
+  max-width: 1000px;
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.site-footer .gh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--accent, #007bff);
+  background: rgba(11,120,255,0.06);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(11,120,255,0.08);
+  transition: transform .12s ease, box-shadow .12s ease;
+  font-weight: 600;
+}
+.site-footer .gh-link:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(11,120,255,0.08); }
+.site-footer svg { width: 18px; height: 18px; display: block; flex: 0 0 18px; }
+.site-footer .meta { color: #6b7280; font-weight: 500; font-size: 0.88rem; }
+@media (max-width: 520px) {
+  .site-footer { padding: 14px 12px; }
+  .site-footer .inner { gap: 8px; }
+}
+
+/* responsive tweaks */
+@media (min-width: 700px) {
+  .card { max-width: 520px; }
+}
+@media (max-width: 520px) {
+  .card { padding:18px; }
+  .logo { width:64px; }
+}
+
+/* Preview container (ถ้ายังไม่มี) */
+#preview {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+/* ---------- Recommended: responsive max size ---------- */
+/* Use width:100% so image can shrink on narrow screens, but cap by max-width and max-height */
+#preview img.preview {
+  width: 100%;               /* allow shrink on small screens */
+  max-width: 720px;         /* absolute cap on large screens (change as needed) */
+  max-height: 60vh;        /* never taller than 60% of viewport height */
+  height: auto;            /* preserve aspect ratio */
+  object-fit: contain;     /* ensure contained inside box when constrained by height */
+  border-radius: 6px;
+  display: block;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.06);
+}
+
+/* Smaller cap on phones */
+@media (max-width: 520px) {
+  #preview img.preview {
+    max-width: 90vw;       /* at most 90% of viewport width on small screens */
+    max-height: 50vh;
+  }
+}
+
+/* ---------- Optional: small thumbnail style ---------- */
+/* Use this class if you want a smaller preview (e.g. in lists) */
+#preview img.preview.small {
+  width: auto;
+  max-width: 320px;
+  max-height: 240px;
+  object-fit: cover; /* crops to fill; use contain if you want full image shown */
+}
+

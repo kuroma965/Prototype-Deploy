@@ -1,73 +1,283 @@
 <!doctype html>
-<html>
+<html lang="th">
 <head>
-  <meta charset="utf-8">
-  <title>Upload to pic.in.th via proxy</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: system-ui, Roboto, Arial; padding:20px; background:#f5f5f5; }
-    .wrap { max-width:600px; margin:0 auto; background:#fff; padding:20px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.08); }
-    img.preview { max-width:300px; margin-top:12px; border-radius:6px; display:block; }
-    .meta { margin-top:8px; color:#333; }
-    a.back { display:inline-block; margin-bottom:12px; text-decoration:none; color:#007bff; }
-  </style>
+  <!-- global stylesheet (single source of truth) -->
+  <link rel="stylesheet" href="/global.css" />
+
+  <!-- head loader (load shared head/layout if any) -->
+  <script>
+    (function () {
+      async function loadHeadComponent(url, opts = {}) {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' });
+          if (!res.ok) throw new Error('Failed to load head component: ' + res.status);
+          const text = await res.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(text, 'text/html');
+          const headNodes = Array.from(doc.head.childNodes).filter(n => n.nodeType === 1);
+          for (const node of headNodes) {
+            if (node.tagName && node.tagName.toLowerCase() === 'script') {
+              const s = document.createElement('script');
+              for (const attr of node.attributes) s.setAttribute(attr.name, attr.value);
+              if (!node.src) s.textContent = node.textContent;
+              document.head.appendChild(s);
+              if (s.src) {
+                await new Promise((resolve) => { s.addEventListener('load', resolve); s.addEventListener('error', () => { console.warn('Script failed to load:', s.src); resolve(); }); });
+              }
+            } else {
+              document.head.appendChild(node.cloneNode(true));
+            }
+          }
+          if (opts.title) document.title = opts.title;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      window.__headLoaded = loadHeadComponent('/layout/layout.html');
+    })();
+  </script>
 </head>
+
 <body>
-  <div class="wrap">
-    <a href="/index.html" class="back">← กลับหน้าหลัก</a>
-    <h2>Upload (client → your server → pic.in.th)</h2>
-    <input type="file" id="fileInput" accept="image/*">
-    <button id="uploadBtn">Upload</button>
-    <div id="status"></div>
-    <div id="preview"></div>
-  </div>
+  <!-- main wrapper stretches to push footer down -->
+  <main class="site-main">
+    <div class="card wrap" role="main" aria-labelledby="page-title">
+      <a href="/index.html" class="back" aria-label="กลับหน้าหลัก">← กลับหน้าหลัก</a>
+      <h2 id="page-title">Upload (client → your server → pic.in.th)</h2>
 
-<script>
-document.getElementById('uploadBtn').addEventListener('click', async () => {
-  const input = document.getElementById('fileInput');
-  const status = document.getElementById('status');
-  const preview = document.getElementById('preview');
-  status.textContent = '';
-  preview.innerHTML = '';
+      <label for="fileInput" style="display:block; margin-top:12px; font-weight:600;">เลือกไฟล์รูป</label>
+      <input type="file" id="fileInput" accept="image/*" aria-describedby="upload-help" />
 
-  if (!input.files || !input.files[0]) { alert('เลือกไฟล์ก่อน'); return; }
-  const file = input.files[0];
+      <div id="selected-info" style="margin-top:8px; color:var(--text-muted); font-size:0.95rem;"></div>
 
-  if (file.size > 10 * 1024 * 1024) { status.textContent = 'ไฟล์ใหญ่เกิน (limit ~10MB)'; return; }
+      <button class="btn" id="uploadBtn" style="margin-top:10px;" disabled>Upload</button>
 
-  const fd = new FormData();
-  fd.append('file', file); // server expect 'file' (multer single('file'))
+      <div id="status" style="margin-top:12px;" role="status" aria-live="polite"></div>
 
-  status.textContent = 'กำลังอัพโหลดไปยังเซิร์ฟเวอร์ของคุณ...';
+      <!-- preview area (will show before upload and replaced with server image after upload) -->
+      <div id="preview" style="margin-top:12px; "></div>
+    </div>
+  </main>
 
-  try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const json = await res.json();
+  <!-- upload + preview + footer loader -->
+  <script>
+    (async function () {
+      // wait for shared head (SweetAlert etc.) to be available if used
+      if (window.__headLoaded) await window.__headLoaded;
 
-    if (!res.ok) {
-      status.textContent = 'Upload failed: ' + (json?.error?.message || json?.detail || res.statusText);
-      console.error('upload failed', res.status, json);
-      return;
-    }
+      const input = document.getElementById('fileInput');
+      const selectedInfo = document.getElementById('selected-info');
+      const status = document.getElementById('status');
+      const preview = document.getElementById('preview');
+      const uploadBtn = document.getElementById('uploadBtn');
 
-    const image = json?.image;
-    if (!image) {
-      status.textContent = 'Unexpected response: ' + JSON.stringify(json);
-      return;
-    }
+      let objectUrl = null;
 
-    const url = image.display_url || image.url;
-    status.innerHTML = `อัพโหลดเสร็จ — <a href="${url}" target="_blank" rel="noopener">เปิดภาพ</a>`;
-    const img = document.createElement('img');
-    img.src = url;
-    img.className = 'preview';
-    preview.appendChild(img);
-    console.log('upload response', json);
-  } catch (err) {
-    status.textContent = 'Error: ' + (err.message || err);
-    console.error('upload error', err);
-  }
-});
-</script>
+      function showSwalError(title, text) {
+        if (window.Swal) {
+          Swal.fire({ icon: 'error', title: title || 'เกิดข้อผิดพลาด', text: text || '' });
+        } else {
+          alert((title ? title + '\n' : '') + (text || ''));
+        }
+      }
+
+      function showSwalSuccess(title, html) {
+        if (window.Swal) {
+          Swal.fire({ icon: 'success', title: title || 'สำเร็จ', html: html || '' });
+        } else {
+          alert(title || 'สำเร็จ');
+        }
+      }
+
+      function renderLocalPreview(file) {
+        // clean previous
+        preview.innerHTML = '';
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
+
+        if (!file) return;
+
+        const info = document.createElement('div');
+        info.textContent = `${file.name} — ${(file.size/1024).toFixed(1)} KB`;
+        info.style.marginBottom = '8px';
+        selectedInfo.textContent = '';
+        selectedInfo.appendChild(info);
+
+        // Create image preview (use object URL for best performance)
+        objectUrl = URL.createObjectURL(file);
+        const img = document.createElement('img');
+        img.src = objectUrl;
+        img.alt = 'preview';
+        img.className = 'preview';
+        img.style.maxWidth = '320px';
+        img.style.borderRadius = '6px';
+        img.style.display = 'block';
+        preview.appendChild(img);
+
+        // enable upload button
+        uploadBtn.disabled = false;
+      }
+
+      input.addEventListener('change', (e) => {
+        status.textContent = '';
+        preview.innerHTML = '';
+        selectedInfo.textContent = '';
+
+        const file = input.files && input.files[0];
+        if (!file) {
+          uploadBtn.disabled = true;
+          return;
+        }
+
+        // check type
+        if (!file.type.startsWith('image/')) {
+          showSwalError('ไฟล์ไม่ถูกต้อง', 'โปรดเลือกไฟล์รูป (jpg, png, gif, ...)');
+          input.value = '';
+          uploadBtn.disabled = true;
+          return;
+        }
+
+        // file size check (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          showSwalError('ไฟล์ใหญ่เกิน', 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB');
+          input.value = '';
+          uploadBtn.disabled = true;
+          return;
+        }
+
+        renderLocalPreview(file);
+      });
+
+      uploadBtn.addEventListener('click', async () => {
+        const file = input.files && input.files[0];
+        if (!file) {
+          showSwalError('ไม่พบไฟล์', 'โปรดเลือกไฟล์ก่อนอัพโหลด');
+          return;
+        }
+
+        uploadBtn.disabled = true;
+        status.textContent = 'กำลังอัพโหลดไปยังเซิร์ฟเวอร์ของคุณ...';
+
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+
+          const res = await fetch('/api/upload', { method: 'POST', body: fd });
+          let json = null;
+          try { json = await res.json(); } catch (e) { json = null; }
+
+          if (!res.ok) {
+            const errMsg = json && (json.error || json.detail) ? JSON.stringify(json) : res.statusText;
+            status.textContent = 'Upload failed: ' + errMsg;
+            console.error('upload failed', res.status, json);
+            showSwalError('อัพโหลดล้มเหลว', errMsg);
+            uploadBtn.disabled = false;
+            return;
+          }
+
+          // success
+          const image = json?.image;
+          const localPath = json?.local_path;
+          const url = image?.display_url || image?.url || null;
+
+          // Update preview area: prefer using server URL (if provided)
+          preview.innerHTML = '';
+          if (url) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.textContent = 'เปิดภาพบน pic.in.th';
+            a.style.display = 'inline-block';
+            a.style.marginBottom = '8px';
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = 'uploaded image';
+            img.className = 'preview';
+            img.style.maxWidth = '420px';
+            img.style.borderRadius = '6px';
+            img.style.display = 'block';
+
+            preview.appendChild(a);
+            preview.appendChild(img);
+
+            status.innerHTML = `อัพโหลดเสร็จ — <a href="${url}" target="_blank" rel="noopener">เปิดภาพ</a>`;
+            showSwalSuccess('อัพโหลดเสร็จ', `เปิดภาพ: <a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+          } else {
+            // no url returned — still show local saved path if any and keep previous local preview
+            status.textContent = 'อัพโหลดเสร็จ แต่เซิร์ฟเวอร์ไม่ได้ส่ง url กลับ';
+            if (localPath) {
+              const p = document.createElement('div');
+              p.innerHTML = `ไฟล์ถูกบันทึกที่: <code>${localPath}</code>`;
+              preview.appendChild(p);
+            }
+            showSwalSuccess('อัพโหลดเสร็จ', 'เซิร์ฟเวอร์ตอบกลับสำเร็จ แต่ไม่มีลิงก์รูป');
+          }
+
+          // cleanup input and objectUrl (if used)
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          input.value = '';
+        } catch (err) {
+          console.error('upload error', err);
+          status.textContent = 'Error: ' + (err.message || err);
+          showSwalError('เกิดข้อผิดพลาด', err instanceof Error ? err.message : String(err));
+        } finally {
+          uploadBtn.disabled = false;
+        }
+      });
+    })();
+
+
+    (async function () {
+      try {
+        const res = await fetch('/components/footer.html', { cache: 'no-cache' });
+        if (!res.ok) return console.warn('Could not load footer:', res.status);
+
+        const text = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'text/html');
+
+        // หา element footer จาก parsed doc
+        const footer = doc.body.querySelector('footer.site-footer');
+        if (!footer) {
+          // fallback: ถ้าไม่มี footer ให้แทรก raw HTML
+          document.body.insertAdjacentHTML('beforeend', text);
+          return;
+        }
+
+        // แยก scripts ออกมาก่อน (เราจะ execute ด้วยการสร้างใหม่)
+        const scripts = Array.from(footer.querySelectorAll('script'));
+        scripts.forEach(s => s.parentNode && s.parentNode.removeChild(s));
+
+        // นำ footer ที่เหลือมาแทรกใน document
+        document.body.appendChild(footer);
+
+        // สร้างและแนบ script ใหม่เป็น child ของ footer (จะ execute)
+        for (const s of scripts) {
+          const newS = document.createElement('script');
+          // คัดลอก attributes (เช่น src, type, async)
+          for (const a of s.attributes) newS.setAttribute(a.name, a.value);
+          if (s.src) {
+            // ถ้าเป็น external src: append จะโหลดและ execute อัตโนมัติ
+            footer.appendChild(newS);
+            // (ถ้าต้องการรอให้ script โหลดเสร็จ ก่อนทำอย่างอื่น ให้เพิ่ม await/Promise)
+          } else {
+            // Inline script: ใส่ textContent แล้ว append จะ execute
+            newS.textContent = s.textContent;
+            footer.appendChild(newS);
+          }
+        }
+      } catch (err) {
+        console.error('Footer load error', err);
+      }
+    })();
+  </script>
 </body>
+
 </html>

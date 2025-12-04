@@ -1,7 +1,7 @@
 // main.js – Deno Deploy + Hono
 
 import { Hono } from "jsr:@hono/hono";
-import { serveStatic } from "jsr:@hono/hono/deno"; // 👈 เพิ่มบรรทัดนี้
+import { serveStatic } from "jsr:@hono/hono/deno"; 
 
 // -------------------- CONFIG --------------------
 
@@ -16,17 +16,9 @@ const MAIL_FROM_NAME = Deno.env.get("MAIL_FROM_NAME") ?? "My-Web";
 
 const app = new Hono();
 
-// 👇 เสิร์ฟไฟล์ทั้งหมดในโฟลเดอร์ ./public
 app.use("/*", serveStatic({ root: "./public" }));
-
-/**
- * หน้าแรก -> redirect ไป index.html
- */
 app.get("/", (c) => c.redirect("/index.html"));
 
-/**
- * กันกรณีใน HTML เรียก /public/xxx
- */
 app.get("/public/*", (c) => {
   const url = new URL(c.req.url);
   const path = url.pathname.replace(/^\/public/, "");
@@ -34,7 +26,6 @@ app.get("/public/*", (c) => {
 });
 
 // -------------------- /api/upload --------------------
-
 app.post("/api/upload", async (c) => {
   try {
     const incomingForm = await c.req.formData();
@@ -44,13 +35,43 @@ app.post("/api/upload", async (c) => {
       return c.json({ error: "no_file" }, 400);
     }
 
-    const fd = new FormData();
-    fd.append("source", file, file.name || "upload.bin");
-    fd.append("format", "json");
+    // sanitize filename
+    const originalName = file.name || `upload-${Date.now()}`;
+    const safeName = String(originalName).replace(/[^a-zA-Z0-9.\-_]/g, "_");
 
-    if (PIC_API_KEY) {
-      fd.append("key", PIC_API_KEY);
+    // folder name you wanted
+    const folderName = "ZMQhq";
+    const savedRelPath = `${folderName}/${safeName}`; // returned relative path
+
+    // --- Try to save locally (Node.js) ---
+    try {
+      // dynamic import so code doesn't crash in non-Node environments
+      const fs = await import("fs/promises");
+      const path = await import("path");
+
+      const dirPath = path.join(process.cwd(), folderName);
+      await fs.mkdir(dirPath, { recursive: true });
+
+      const savePath = path.join(dirPath, safeName);
+
+      // convert File -> ArrayBuffer -> Buffer (Node)
+      const ab = await file.arrayBuffer();
+      const buffer = Buffer.from(ab);
+      await fs.writeFile(savePath, buffer);
+
+      // optional: set file mode, etc.
+      // await fs.chmod(savePath, 0o644);
+    } catch (saveErr) {
+      // don't fail the whole request if saving locally fails — log and continue to proxy
+      console.warn("Could not save uploaded file locally:", saveErr);
     }
+
+    // --- proxy to PIC API as before ---
+    const fd = new FormData();
+    // append original File object so your previous flow is preserved
+    fd.append("source", file, file.name || safeName);
+    fd.append("format", "json");
+    if (PIC_API_KEY) fd.append("key", PIC_API_KEY);
 
     const resp = await fetch(PIC_API_URL, {
       method: "POST",
@@ -65,7 +86,13 @@ app.post("/api/upload", async (c) => {
       data = { raw: text };
     }
 
-    return c.json(data, resp.status);
+    // include local path info (best-effort)
+    const out = {
+      ...data,
+      local_path: savedRelPath,
+    };
+
+    return c.json(out, resp.status);
   } catch (err) {
     console.error("Upload proxy error:", err);
     return c.json(
@@ -78,56 +105,25 @@ app.post("/api/upload", async (c) => {
   }
 });
 
-// -------------------- /api/send-mail (ไม่รองรับ Gmail SMTP) --------------------
-
-app.post("/api/send-mail", () => {
-  const html = `
-    <h2>ไม่รองรับ Gmail SMTP บน Deno Deploy</h2>
-    <p>เส้นทางนี้เคยใช้ Nodemailer + Gmail ซึ่งใช้ TCP โดยตรง (Deno Deploy ไม่อนุญาต)</p>
-    <p>กรุณาใช้เส้นทาง <code>/api/send-mail-maileroo</code> แทน</p>
-    <a href="/">กลับหน้าหลัก</a>
-  `;
-  return new Response(html, {
-    status: 501,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
-});
-
 // -------------------- /api/send-mail-maileroo --------------------
-
 app.post("/api/send-mail-maileroo", async (c) => {
+  // check required envs
   if (!MAILEROO_API_KEY) {
-    const html = `
-      <h2>MAILEROO_API_KEY ไม่ถูกตั้งค่า</h2>
-      <p>ต้องตั้ง Environment Variable: <code>MAILEROO_API_KEY</code> ใน Deno Deploy</p>
-      <a href="/">กลับหน้าหลัก</a>
-    `;
-    return c.html(html, 500);
+    return c.json({ error: "missing_env", detail: "MAILEROO_API_KEY not configured" }, 500);
   }
-
   if (!MAIL_FROM_ADDRESS) {
-    const html = `
-      <h2>MAIL_FROM_ADDRESS ไม่ถูกตั้งค่า</h2>
-      <p>ต้องตั้งค่า <code>MAIL_FROM_ADDRESS</code> เช่น <code>no-reply@xxxx.maileroo.org</code></p>
-      <a href="/">กลับหน้าหลัก</a>
-    `;
-    return c.html(html, 500);
+    return c.json({ error: "missing_env", detail: "MAIL_FROM_ADDRESS not configured" }, 500);
   }
 
+  // parse form
   const form = await c.req.formData();
-  const to = (form.get("to") ?? "").toString();
-  const subject = (form.get("subject") ?? "").toString();
-  const message = (form.get("message") ?? "").toString();
+  const to = (form.get("to") ?? "").toString().trim();
+  const subject = (form.get("subject") ?? "").toString().trim();
+  const message = (form.get("message") ?? "").toString().trim();
 
+  // validate
   if (!to || !subject || !message) {
-    return c.html(
-      `
-      <h2>ข้อมูลไม่ครบ</h2>
-      <p>ต้องมี to, subject, message</p>
-      <a href="/">กลับหน้าหลัก</a>
-    `,
-      400,
-    );
+    return c.json({ error: "invalid_input", detail: "Fields 'to', 'subject' and 'message' are required" }, 400);
   }
 
   const payload = {
@@ -157,39 +153,25 @@ app.post("/api/send-mail-maileroo", async (c) => {
     try {
       data = JSON.parse(bodyText);
     } catch {
-      data = bodyText;
+      data = { raw: bodyText };
     }
 
     if (resp.ok) {
-      const html = `
-        <h2>ส่งเมลผ่าน Maileroo สำเร็จ!</h2>
-        <p>ส่งไปที่: ${to}</p>
-        <a href="/">กลับหน้าหลัก</a>
-      `;
-      return c.html(html);
+      // success -> return JSON for frontend to handle
+      return c.json({ success: true, to, maileroo: data }, 200);
     } else {
+      // Maileroo returned non-2xx -> forward details and status
       console.error("Maileroo API error:", resp.status, data);
-      const html = `
-        <h2>Maileroo API ตอบกลับด้วย error</h2>
-        <p>Status: ${resp.status}</p>
-        <pre>${JSON.stringify(data, null, 2)}</pre>
-        <a href="/">กลับหน้าหลัก</a>
-      `;
-      return c.html(html, resp.status);
+      return c.json({ error: "maileroo_error", status: resp.status, detail: data }, resp.status);
     }
   } catch (err) {
     console.error("Maileroo API request failed:", err);
-    const html = `
-      <h2>เกิดข้อผิดพลาดในการเรียก Maileroo API</h2>
-      <pre>${err instanceof Error ? err.message : String(err)}</pre>
-      <a href="/">กลับหน้าหลัก</a>
-    `;
-    return c.html(html, 500);
+    return c.json(
+      { error: "request_failed", detail: err instanceof Error ? err.message : String(err) },
+      500,
+    );
   }
 });
-
-// ❌ อย่าเรียก Deno.serve เอง
-// Deno.serve(app.fetch);
 
 // ให้ Deno Deploy ใช้ app.fetch เป็น handler
 export default app;

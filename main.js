@@ -1,4 +1,4 @@
-// main.ts – Deno Deploy + Hono เวอร์ชันแทน server.js เดิม
+// main.js – Deno Deploy + Hono เวอร์ชันแทน server.js เดิม (JavaScript)
 
 import { Hono } from "jsr:@hono/hono";
 
@@ -58,7 +58,7 @@ app.post("/api/upload", async (c) => {
     });
 
     const text = await resp.text();
-    let data: unknown;
+    let data;
     try {
       data = JSON.parse(text);
     } catch {
@@ -153,7 +153,7 @@ app.post("/api/send-mail-maileroo", async (c) => {
     });
 
     const bodyText = await resp.text();
-    let data: unknown;
+    let data;
     try {
       data = JSON.parse(bodyText);
     } catch {
@@ -190,7 +190,5 @@ app.post("/api/send-mail-maileroo", async (c) => {
 
 // -------------------- START SERVER (Deno Deploy) --------------------
 
-export default app;
-
-// Deno Deploy จะใช้ app.fetch เป็น handler
 Deno.serve(app.fetch);
+export default app;

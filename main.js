@@ -39,13 +39,12 @@ app.post("/api/upload", async (c) => {
     const originalName = file.name || `upload-${Date.now()}`;
     const safeName = String(originalName).replace(/[^a-zA-Z0-9.\-_]/g, "_");
 
-    // folder name you wanted
+    // ชื่อโฟลเดอร์ในเครื่อง (local)
     const folderName = "ZMQhq";
     const savedRelPath = `${folderName}/${safeName}`; // returned relative path
 
     // --- Try to save locally (Node.js) ---
     try {
-      // dynamic import so code doesn't crash in non-Node environments
       const fs = await import("fs/promises");
       const path = await import("path");
 
@@ -54,28 +53,31 @@ app.post("/api/upload", async (c) => {
 
       const savePath = path.join(dirPath, safeName);
 
-      // convert File -> ArrayBuffer -> Buffer (Node)
       const ab = await file.arrayBuffer();
       const buffer = Buffer.from(ab);
       await fs.writeFile(savePath, buffer);
-
-      // optional: set file mode, etc.
-      // await fs.chmod(savePath, 0o644);
     } catch (saveErr) {
-      // don't fail the whole request if saving locally fails — log and continue to proxy
       console.warn("Could not save uploaded file locally:", saveErr);
     }
 
-    // --- proxy to PIC API as before ---
+    // --- proxy to PIC API ---
     const fd = new FormData();
-    // append original File object so your previous flow is preserved
     fd.append("source", file, file.name || safeName);
     fd.append("format", "json");
-    if (PIC_API_KEY) fd.append("key", PIC_API_KEY);
+
+    // ตรงนี้คือ key สำคัญ ให้ส่ง album_id = ZMQhq ไป
+    fd.append("album_id", "ZMQhq"); // ให้รูปเข้าอัลบั้ม/โฟลเดอร์ ZMQhq
+
+    if (PIC_API_KEY) {
+      fd.append("key", PIC_API_KEY);
+      // หรือจะใช้ header X-API-Key แทนก็ได้ ตาม docs
+      // headers["X-API-Key"] = PIC_API_KEY;
+    }
 
     const resp = await fetch(PIC_API_URL, {
       method: "POST",
       body: fd,
+      // headers, ถ้าใช้ X-API-Key
     });
 
     const text = await resp.text();
@@ -86,10 +88,9 @@ app.post("/api/upload", async (c) => {
       data = { raw: text };
     }
 
-    // include local path info (best-effort)
     const out = {
       ...data,
-      local_path: savedRelPath,
+      local_path: savedRelPath, // path ไฟล์ในเครื่อง (best-effort)
     };
 
     return c.json(out, resp.status);
@@ -123,8 +124,26 @@ app.post("/api/send-mail-maileroo", async (c) => {
 
   // validate
   if (!to || !subject || !message) {
-    return c.json({ error: "invalid_input", detail: "Fields 'to', 'subject' and 'message' are required" }, 400);
+    return c.json(
+      { error: "invalid_input", detail: "Fields 'to', 'subject' and 'message' are required" },
+      400,
+    );
   }
+
+  // ----- สร้าง footer -----
+  const footerHtml =
+    `<hr>` +
+    `<p style="font-size:12px;color:#666;margin-top:16px;">` +
+    `Sent with <strong>Pototype</strong> · ` +
+    `<a href="https://github.com/reqiler/Prototype" target="_blank" rel="noopener noreferrer">` +
+    `https://github.com/reqiler/Prototype` +
+    `</a>` +
+    `</p>`;
+
+  const footerPlain =
+    `\n\n-- \n` +
+    `Sent with Pototype\n` +
+    `https://github.com/reqiler/Prototype`;
 
   const payload = {
     from: {
@@ -133,8 +152,10 @@ app.post("/api/send-mail-maileroo", async (c) => {
     },
     to: [{ address: to }],
     subject,
-    html: `<p>${message.replace(/\n/g, "<br>")}</p>`,
-    plain: message,
+    // html: เนื้อความ + footer
+    html: `<p>${message.replace(/\n/g, "<br>")}</p>${footerHtml}`,
+    // plain text: เนื้อความ + footer
+    plain: `${message}${footerPlain}`,
     tracking: true,
   };
 
@@ -157,12 +178,13 @@ app.post("/api/send-mail-maileroo", async (c) => {
     }
 
     if (resp.ok) {
-      // success -> return JSON for frontend to handle
       return c.json({ success: true, to, maileroo: data }, 200);
     } else {
-      // Maileroo returned non-2xx -> forward details and status
       console.error("Maileroo API error:", resp.status, data);
-      return c.json({ error: "maileroo_error", status: resp.status, detail: data }, resp.status);
+      return c.json(
+        { error: "maileroo_error", status: resp.status, detail: data },
+        resp.status,
+      );
     }
   } catch (err) {
     console.error("Maileroo API request failed:", err);
